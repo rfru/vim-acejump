@@ -40,69 +40,6 @@
 		" No colors are defined for this group, link to defaults
 		execute printf('hi default link %s %s', a:group, group_default)
 	endfunction " }}}
-	function! EasyMotion#InitMappings(motions) "{{{
-		for motion in keys(a:motions)
-			call EasyMotion#InitOptions({ 'mapping_' . motion : g:EasyMotion_leader_key . motion })
-		endfor
-
-		if g:EasyMotion_do_mapping
-			for [motion, fn] in items(a:motions)
-				if empty(g:EasyMotion_mapping_{motion})
-					continue
-				endif
-
-				silent exec 'nnoremap <silent> ' . g:EasyMotion_mapping_{motion} . '      :call EasyMotion#' . fn.name . '(0, ' . fn.dir . ')<CR>'
-				silent exec 'onoremap <silent> ' . g:EasyMotion_mapping_{motion} . '      :call EasyMotion#' . fn.name . '(0, ' . fn.dir . ')<CR>'
-				silent exec 'vnoremap <silent> ' . g:EasyMotion_mapping_{motion} . ' :<C-U>call EasyMotion#' . fn.name . '(1, ' . fn.dir . ')<CR>'
-			endfor
-		endif
-	endfunction "}}}
-" }}}
-" Motion functions {{{
-	function! EasyMotion#F(visualmode, direction) " {{{
-		let char = s:GetSearchChar(a:visualmode)
-
-		if empty(char)
-			return
-		endif
-
-		let re = '\C' . escape(char, '.$^~')
-
-		call s:EasyMotion(re, a:direction, a:visualmode ? visualmode() : '', mode(1))
-	endfunction " }}}
-	function! EasyMotion#T(visualmode, direction) " {{{
-		let char = s:GetSearchChar(a:visualmode)
-
-		if empty(char)
-			return
-		endif
-
-		if a:direction == 1
-			let re = '\C' . escape(char, '.$^~') . '\zs.'
-		else
-			let re = '\C.' . escape(char, '.$^~')
-		endif
-
-		call s:EasyMotion(re, a:direction, a:visualmode ? visualmode() : '', mode(1))
-	endfunction " }}}
-	function! EasyMotion#WB(visualmode, direction) " {{{
-		call s:EasyMotion('\(\<.\|^$\)', a:direction, a:visualmode ? visualmode() : '', '')
-	endfunction " }}}
-	function! EasyMotion#WBW(visualmode, direction) " {{{
-		call s:EasyMotion('\(\(^\|\s\)\@<=\S\|^$\)', a:direction, a:visualmode ? visualmode() : '', '')
-	endfunction " }}}
-	function! EasyMotion#E(visualmode, direction) " {{{
-		call s:EasyMotion('\(.\>\|^$\)', a:direction, a:visualmode ? visualmode() : '', mode(1))
-	endfunction " }}}
-	function! EasyMotion#EW(visualmode, direction) " {{{
-		call s:EasyMotion('\(\S\(\s\|$\)\|^$\)', a:direction, a:visualmode ? visualmode() : '', mode(1))
-	endfunction " }}}
-	function! EasyMotion#JK(visualmode, direction) " {{{
-		call s:EasyMotion('^\(\w\|\s*\zs\|$\)', a:direction, a:visualmode ? visualmode() : '', '')
-	endfunction " }}}
-	function! EasyMotion#Search(visualmode, direction) " {{{
-		call s:EasyMotion(@/, a:direction, a:visualmode ? visualmode() : '', '')
-	endfunction " }}}
 " }}}
 " Helper functions {{{
 	function! s:Message(message) " {{{
@@ -157,23 +94,6 @@
 		endif
 
 		return nr2char(char)
-	endfunction " }}}
-	function! s:GetSearchChar(visualmode) " {{{
-		call s:Prompt('Search for character')
-
-		let char = s:GetChar()
-
-		" Check that we have an input char
-		if empty(char)
-			" Restore selection
-			if ! empty(a:visualmode)
-				silent exec 'normal! gv'
-			endif
-
-			return ''
-		endif
-
-		return char
 	endfunction " }}}
 " }}}
 " Grouping algorithms {{{
@@ -454,7 +374,14 @@
 			return s:PromptUser(target)
 		endif
 	endfunction "}}}
-	function! s:EasyMotion(regexp, direction, visualmode, mode) " {{{
+	function! EasyMotion(visualmode) " {{{
+		" prompt for and capture user's search character
+		echo "AceJump to words starting with letter: "
+		let char = s:GetChar()
+		if empty(char)
+			return
+		endif
+
 		let orig_pos = [line('.'), col('.')]
 		let targets = []
 
@@ -468,24 +395,18 @@
 				call s:VarReset('&virtualedit', '')
 			" }}}
 			" Find motion targets {{{
-				let search_direction = (a:direction == 1 ? 'b' : '')
-				let search_stopline = line(a:direction == 1 ? 'w0' : 'w$')
-
-				while 1
-					let pos = searchpos(a:regexp, search_direction, search_stopline)
-
-					" Reached end of search range
-					if pos == [0, 0]
-						break
-					endif
-
-					" Skip folded lines
-					if foldclosed(pos[0]) != -1
-						continue
-					endif
-
-					call add(targets, pos)
-				endwhile
+				" loop over every line on the screen (just the visible lines)
+				for row in range(line('w0'), line('w$'))
+					" find all columns on this line where a word begins with our letter
+					let col = 0
+					let matchCol = match(' '.getline(row), '\c.\<'.char, col)
+					while matchCol != -1
+						" store any matching row/col positions
+						call add(targets, [row, matchCol + 1])
+						let col = matchCol + 1
+						let matchCol = match(' '.getline(row), '\c.\<'.char, col)
+					endwhile
+				endfor
 
 				let targets_len = len(targets)
 				if targets_len == 0
@@ -498,17 +419,6 @@
 
 			" Shade inactive source {{{
 				if g:EasyMotion_do_shade
-					let shade_hl_pos = '\%' . orig_pos[0] . 'l\%'. orig_pos[1] .'c'
-
-					if a:direction == 1
-						" Backward
-						let shade_hl_re = '\%'. line('w0') .'l\_.*' . shade_hl_pos
-					else
-						" Forward
-						let shade_hl_re = shade_hl_pos . '\_.*\%'. line('w$') .'l'
-					endif
-
-					let shade_hl_id = matchadd(g:EasyMotion_hl_group_shade, shade_hl_re, 0)
 				endif
 			" }}}
 
@@ -520,16 +430,6 @@
 					keepjumps call cursor(orig_pos[0], orig_pos[1])
 
 					exec 'normal! ' . a:visualmode
-				endif
-			" }}}
-			" Handle operator-pending mode {{{
-				if a:mode == 'no'
-					" This mode requires that we eat one more
-					" character to the right if we're using
-					" a forward motion
-					if a:direction != 1
-						let coords[1] += 1
-					endif
 				endif
 			" }}}
 

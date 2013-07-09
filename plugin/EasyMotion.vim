@@ -14,9 +14,8 @@
 	" Default options {{{
 		call EasyMotion#InitOptions({
 		\   'leader_key'      : '<Leader><Leader>'
-		\ , 'keys'            : 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+		\ , 'keys'            : 'abcdefghijlkmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 		\ , 'do_shade'        : 1
-		\ , 'do_mapping'      : 1
 		\ , 'grouping'        : 1
 		\
 		\ , 'hl_group_target' : 'EasyMotionTarget'
@@ -47,26 +46,6 @@
 				autocmd ColorScheme * call EasyMotion#InitHL(g:EasyMotion_hl_group_shade,  s:shade_hl_defaults)
 			augroup end
 		" }}}
-	" }}}
-	" Default key mapping {{{
-		call EasyMotion#InitMappings({
-		\   'f' : { 'name': 'F'  , 'dir': 0 }
-		\ , 'F' : { 'name': 'F'  , 'dir': 1 }
-		\ , 't' : { 'name': 'T'  , 'dir': 0 }
-		\ , 'T' : { 'name': 'T'  , 'dir': 1 }
-		\ , 'w' : { 'name': 'WB' , 'dir': 0 }
-		\ , 'W' : { 'name': 'WBW', 'dir': 0 }
-		\ , 'b' : { 'name': 'WB' , 'dir': 1 }
-		\ , 'B' : { 'name': 'WBW', 'dir': 1 }
-		\ , 'e' : { 'name': 'E'  , 'dir': 0 }
-		\ , 'E' : { 'name': 'EW' , 'dir': 0 }
-		\ , 'ge': { 'name': 'E'  , 'dir': 1 }
-		\ , 'gE': { 'name': 'EW' , 'dir': 1 }
-		\ , 'j' : { 'name': 'JK' , 'dir': 0 }
-		\ , 'k' : { 'name': 'JK' , 'dir': 1 }
-		\ , 'n' : { 'name': 'Search' , 'dir': 0 }
-		\ , 'N' : { 'name': 'Search' , 'dir': 1 }
-		\ })
 	" }}}
 " }}}
 
