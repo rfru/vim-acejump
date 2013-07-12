@@ -374,6 +374,23 @@
 			return s:PromptUser(target)
 		endif
 	endfunction "}}}
+	function! s:MatchWindow(regex, match_mod)
+		let targets = []
+		" loop over every line on the screen (just the visible lines)
+		for row in range(line('w0'), line('w$'))
+			" find all columns on this line where a word begins with our letter
+			let col = 0
+			let src = ' '.getline(row)
+			let matchCol = match(src, a:regex, col)
+			while matchCol != -1
+				" store any matching row/col positions
+				call add(targets, [row, matchCol + a:match_mod])
+				let col = matchCol + 1
+				let matchCol = match(src, a:regex, col)
+			endwhile
+		endfor
+		return targets
+	endfunction
 	function! EasyMotion(visualmode) " {{{
 		" prompt for and capture user's search character
 		echo "AceJump to words starting with letter: "
@@ -383,8 +400,6 @@
 		endif
 
 		let orig_pos = [line('.'), col('.')]
-		let targets = []
-
 		try
 			" Reset properties {{{
 				call s:VarReset('&scrolloff', 0)
@@ -394,33 +409,23 @@
 				call s:VarReset('&spell', 0)
 				call s:VarReset('&virtualedit', '')
 			" }}}
-			" Find motion targets {{{
-				" loop over every line on the screen (just the visible lines)
-				for row in range(line('w0'), line('w$'))
-					" find all columns on this line where a word begins with our letter
-					let col = 0
-					let matchCol = match(' '.getline(row), '\c.\<'.char, col)
-					while matchCol != -1
-						" store any matching row/col positions
-						call add(targets, [row, matchCol + 1])
-						let col = matchCol + 1
-						let matchCol = match(' '.getline(row), '\c.\<'.char, col)
-					endwhile
-				endfor
-
-				let targets_len = len(targets)
-				if targets_len == 0
-					throw 'No matches'
-				endif
-			" }}}
-
-			let GroupingFn = function('s:GroupingAlgorithm' . s:grouping_algorithms[g:EasyMotion_grouping])
-			let groups = GroupingFn(targets, split(g:EasyMotion_keys, '\zs'))
 
 			" Shade inactive source {{{
 				if g:EasyMotion_do_shade
+					 let shade_hl_id = matchadd(g:EasyMotion_hl_group_shade, '\%'.line('w0').'l\_.*\%'.line('w$').'l', 0)
 				endif
 			" }}}
+
+				let targets = s:MatchWindow('\c.\<'.char, 1)
+				if len(targets) == 0
+					let targets = s:MatchWindow(char . '\V\@<!' . char, 0)
+					if len(targets) == 0
+						throw 'No matches'
+					endif
+				endif
+
+			let GroupingFn = function('s:GroupingAlgorithm' . s:grouping_algorithms[g:EasyMotion_grouping])
+			let groups = GroupingFn(targets, split(g:EasyMotion_keys, '\zs'))
 
 			" Prompt user for target group/character
 			let coords = s:PromptUser(groups)
