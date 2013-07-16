@@ -236,12 +236,12 @@
 			for [key, item] in items(a:groups)
 				let key = ( ! empty(group_key) ? group_key : key)
 
-				if type(item) == 3
+				if type(get(item, 'target')) == 3
 					" Destination coords
 
 					" The key needs to be zero-padded in order to
 					" sort correctly
-					let dict_key = printf('%05d,%05d', item[0], item[1])
+					let dict_key = printf('%s,%s,%05d,%05d', substitute(item.buffer,',','_','g'), item.window, item.target[0], item.target[1])
 					let coord_keys[dict_key] = key
 
 					" We need a sorting list to loop correctly in
@@ -264,6 +264,9 @@
 		endfunction
 	" }}}
 " }}}
+	function! s:SwitchWindow(window)
+		exe a:window.'wincmd w'
+	endfunction
 " Core functions {{{
 	function! s:PromptUser(groups) "{{{
 		" If only one possible match, jump directly to it {{{
@@ -276,16 +279,25 @@
 			endif
 		" }}}
 		" Prepare marker lines {{{
-			let lines = {}
-			let hl_coords = []
+			let windowLines = {}
+			let windowHLCoords = {}
 			let coord_key_dict = s:CreateCoordKeyDict(a:groups)
-
 			for dict_key in sort(coord_key_dict[0])
 				let target_key = coord_key_dict[1][dict_key]
-				let [line_num, col_num] = split(dict_key, ',')
+				let [bufferName, window, line_num, col_num] = split(dict_key, ',')
 
 				let line_num = str2nr(line_num)
 				let col_num = str2nr(col_num)
+
+				" Setup line dictionary
+				if ! has_key(windowLines, window)
+					let windowLines[window] = {}
+					let windowHLCoords[window] = []
+				endif
+
+				let hl_coords = windowHLCoords[window]
+				let lines = windowLines[window]
+				call s:SwitchWindow(window)
 
 				" Add original line and marker line
 				if ! has_key(lines, line_num)
@@ -315,23 +327,29 @@
 					let lines[line_num]['marker'] = target_key
 				endif
 
-				" Add highlighting coordinates
-				call add(hl_coords, '\%' . line_num . 'l\%' . col_num . 'c')
-
 				" Add marker/target lenght difference for multibyte
 				" compensation
 				let lines[line_num]['mb_compensation'] += (target_char_len - target_key_len)
+
+
+				" Add highlighting coordinates
+				call add(hl_coords, '\%' . line_num . 'l\%' . col_num . 'c')
 			endfor
 
-			let lines_items = items(lines)
 		" }}}
 		" Highlight targets {{{
-			let target_hl_id = matchadd(g:EasyMotion_hl_group_target, join(hl_coords, '\|'), 1)
+			for [window, hl_coords] in items(windowHLCoords)	
+				call s:SwitchWindow(window)
+				let windowHLCoords[window] = matchadd(g:EasyMotion_hl_group_target, join(hl_coords, '\|'), 1)
+			endfor
 		" }}}
 
 		try
 			" Set lines with markers
-			call s:SetLines(lines_items, 'marker')
+			for [window, lines] in items(windowLines)
+				call s:SwitchWindow(window)
+				call s:SetLines(items(lines), 'marker')
+			endfor
 
 			redraw
 
@@ -342,12 +360,16 @@
 			" }}}
 		finally
 			" Restore original lines
-			call s:SetLines(lines_items, 'orig')
+			for [window, lines] in items(windowLines)
+				call s:SwitchWindow(window)
+				call s:SetLines(items(lines), 'orig')
+			endfor
 
 			" Un-highlight targets {{{
-				if exists('target_hl_id')
+				for [window, target_hl_id] in items(windowHLCoords)
+					call s:SwitchWindow(window)
 					call matchdelete(target_hl_id)
-				endif
+				endfor
 			" }}}
 
 			redraw
@@ -366,7 +388,8 @@
 
 		let target = a:groups[char]
 
-		if type(target) == 3
+		let testTarget = get(target, 'target')
+		if type(testTarget) == 3
 			" Return target coordinates
 			return target
 		else
@@ -391,6 +414,17 @@
 		endfor
 		return targets
 	endfunction
+	function! s:MatchChar(char, container)
+		let current = winnr()
+		let targets = s:MatchWindow('\c.\<'.a:char, 1)
+		if len(targets) == 0
+			let targets = s:MatchWindow('\' . a:char . '\@<!\' . a:char, 0)
+		endif
+		if len(targets) > 0
+			let a:container[current] = {'buffer': expand("%:p"),'targets':targets}
+		endif
+	endfunction
+
 	function! EasyMotion(visualmode) " {{{
 		" prompt for and capture user's search character
 		echo "AceJump to words starting with letter: "
@@ -400,6 +434,7 @@
 		endif
 
 		let orig_pos = [line('.'), col('.')]
+		let originalWindow = winnr()
 		try
 			" Reset properties {{{
 				call s:VarReset('&scrolloff', 0)
@@ -412,17 +447,31 @@
 
 			" Shade inactive source {{{
 				if g:EasyMotion_do_shade
-					 let shade_hl_id = matchadd(g:EasyMotion_hl_group_shade, '\%'.line('w0').'l\_.*\%'.line('w$').'l', 0)
+					 let shade_hl_ids = {}
+					 windo let shade_hl_ids[winnr()] = matchadd(g:EasyMotion_hl_group_shade, '\%'.line('w0').'l\_.*\%'.line('w$').'l', 0)
 				endif
 			" }}}
+			let container = {}
+			windo call s:MatchChar(char, container)
+			if empty(container)
+				throw 'No matches'
+			endif
 
-				let targets = s:MatchWindow('\c.\<'.char, 1)
-				if len(targets) == 0
-					let targets = s:MatchWindow(char . '\V\@<!' . char, 0)
-					if len(targets) == 0
-						throw 'No matches'
+			let targets = []
+			let hashes = {}
+			for [windowNumber, windowTargets] in items(container)
+				for target in windowTargets.targets
+					let hashKey = windowTargets.buffer . string(target)
+					if type(get(hashes,hashKey)) == 0
+						call add(targets, {'target':target,'window': windowNumber, 'buffer' : windowTargets.buffer})
 					endif
-				endif
+					let hashes[hashKey] = ''
+					
+				endfor
+			endfor
+			if len(targets) > (len(g:EasyMotion_keys)*3)
+				throw "Too many matches."
+			endif
 
 			let GroupingFn = function('s:GroupingAlgorithm' . s:grouping_algorithms[g:EasyMotion_grouping])
 			let groups = GroupingFn(targets, split(g:EasyMotion_keys, '\zs'))
@@ -431,19 +480,21 @@
 			let coords = s:PromptUser(groups)
 
 			" Update selection {{{
-				if ! empty(a:visualmode)
-					keepjumps call cursor(orig_pos[0], orig_pos[1])
+		"		if ! empty(a:visualmode)
+		"			keepjumps call cursor(orig_pos[0], orig_pos[1])
 
-					exec 'normal! ' . a:visualmode
-				endif
+			"		exec 'normal! ' . a:visualmode
+			"	endif
 			" }}}
 
 			" Update cursor position
-			call cursor(orig_pos[0], orig_pos[1])
-			mark '
-			call cursor(coords[0], coords[1])
+			"call cursor(orig_pos[0], orig_pos[1])
+			"mark '
+			call s:SwitchWindow(coords.window)
+			let originalWindow = coords.window
 
-			call s:Message('Jumping to [' . coords[0] . ', ' . coords[1] . ']')
+			call cursor(coords.target[0], coords.target[1])
+			call s:Message('Jumping to [' . coords.target[0] . ', ' . coords.target[1] . '] in window ' . coords.window)
 		catch
 			redraw
 
@@ -457,6 +508,7 @@
 					keepjumps call cursor(orig_pos[0], orig_pos[1])
 				endif
 			" }}}
+			call s:SwitchWindow(originalWindow)
 		finally
 			" Restore properties {{{
 				call s:VarReset('&scrolloff')
@@ -467,8 +519,9 @@
 				call s:VarReset('&virtualedit')
 			" }}}
 			" Remove shading {{{
-				if g:EasyMotion_do_shade && exists('shade_hl_id')
-					call matchdelete(shade_hl_id)
+				if g:EasyMotion_do_shade && exists('shade_hl_ids')
+					windo call matchdelete(shade_hl_ids[winnr()])
+					call s:SwitchWindow(originalWindow)
 				endif
 			" }}}
 		endtry
