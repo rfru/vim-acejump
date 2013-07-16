@@ -32,7 +32,7 @@
 		let s:shade_hl_defaults = {
 		\   'gui'     : ['NONE', '#777777' , 'NONE']
 		\ , 'cterm256': ['NONE', '242'     , 'NONE']
-		\ , 'cterm'   : ['NONE', 'grey'    , 'NONE']
+		\ , 'cterm'   : ['NONE', 'darkgray' , 'NONE']
 		\ }
 
 		call EasyMotion#InitHL(g:EasyMotion_hl_group_target, s:target_hl_defaults)
