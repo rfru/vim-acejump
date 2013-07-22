@@ -415,6 +415,12 @@
 		return targets
 	endfunction
 	function! s:MatchChar(char, container)
+                let bufName = expand("%")
+                " Don't match in non-file windows
+                if len(bufName) == 0
+                  return
+                endif
+
 		let current = winnr()
 		let targets = s:MatchWindow('\c.\<'.a:char, 1)
 		if len(targets) == 0
