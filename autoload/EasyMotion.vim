@@ -50,21 +50,40 @@
 		echo a:message . ': '
 		echohl None
 	endfunction " }}}
+        function! s:InitMode()
+                " Reset properties {{{
+                        call s:VarReset('&scrolloff', 0)
+                        call s:VarReset('&modified', 0)
+                        call s:VarReset('&modifiable', 1)
+                        call s:VarReset('&readonly', 0)
+                        call s:VarReset('&spell', 0)
+                        call s:VarReset('&virtualedit', '')
+                " }}}
+        endfunction
+        function! s:CloseMode()
+                " Restore properties {{{
+                        call s:VarReset('&scrolloff')
+                        call s:VarReset('&modified')
+                        call s:VarReset('&modifiable')
+                        call s:VarReset('&readonly')
+                        call s:VarReset('&spell')
+                        call s:VarReset('&virtualedit')
+                " }}}
+        endfunction
 	function! s:VarReset(var, ...) " {{{
-		if ! exists('s:var_reset')
-			let s:var_reset = {}
-		endif
-
 		let buf = bufname("")
+                if ! has_key(s:var_reset, buf)
+                  let s:var_reset[buf] = {}
+                endif
 
-		if a:0 == 0 && has_key(s:var_reset, a:var)
+		if a:0 == 0 && has_key(s:var_reset[buf], a:var)
 			" Reset var to original value
-			call setbufvar(buf, a:var, s:var_reset[a:var])
+			call setbufvar(buf, a:var, s:var_reset[buf][a:var])
 		elseif a:0 == 1
 			let new_value = a:0 == 1 ? a:1 : ''
 
 			" Store original value
-			let s:var_reset[a:var] = getbufvar(buf, a:var)
+			let s:var_reset[buf][a:var] = getbufvar(buf, a:var)
 
 			" Set new var value
 			call setbufvar(buf, a:var, new_value)
@@ -338,7 +357,7 @@
 
 		" }}}
 		" Highlight targets {{{
-			for [window, hl_coords] in items(windowHLCoords)	
+			for [window, hl_coords] in items(windowHLCoords)
 				call s:SwitchWindow(window)
 				let windowHLCoords[window] = matchadd(g:EasyMotion_hl_group_target, join(hl_coords, '\|'), 1)
 			endfor
@@ -416,18 +435,19 @@
 	endfunction
 	function! s:MatchChar(char, container)
                 let bufName = expand("%")
+                let bufPath = expand("%:p")
                 " Don't match in non-file windows
-                if len(bufName) == 0
+                if len(bufName) == 0 || bufName == '__Tagbar__' || match(bufPath,'/$') != -1
                   return
                 endif
 
 		let current = winnr()
 		let targets = s:MatchWindow('\c.\<'.a:char, 1)
-		if len(targets) == 0
+		if len(targets) == 0 && match(a:char,'^[a-zA-Z0-9]$') == -1
 			let targets = s:MatchWindow('\' . a:char . '\@<!\' . a:char, 0)
 		endif
 		if len(targets) > 0
-			let a:container[current] = {'buffer': expand("%:p"),'targets':targets}
+			let a:container[current] = {'buffer': bufPath,'targets':targets}
 		endif
 	endfunction
 
@@ -442,14 +462,11 @@
 		let orig_pos = [line('.'), col('.')]
 		let originalWindow = winnr()
 		try
-			" Reset properties {{{
-				call s:VarReset('&scrolloff', 0)
-				call s:VarReset('&modified', 0)
-				call s:VarReset('&modifiable', 1)
-				call s:VarReset('&readonly', 0)
-				call s:VarReset('&spell', 0)
-				call s:VarReset('&virtualedit', '')
-			" }}}
+                        let s:var_reset = {}
+                        if exists('g:loaded_tagbar')
+                          exec 'TagbarTogglePause'
+                        endif
+                        windo call s:InitMode()
 
 			" Shade inactive source {{{
 				if g:EasyMotion_do_shade
@@ -463,6 +480,7 @@
 				throw 'No matches'
 			endif
 
+                        " Prevent coloring duplicate windows.
 			let targets = []
 			let hashes = {}
 			for [windowNumber, windowTargets] in items(container)
@@ -472,10 +490,9 @@
 						call add(targets, {'target':target,'window': windowNumber, 'buffer' : windowTargets.buffer})
 					endif
 					let hashes[hashKey] = ''
-					
 				endfor
 			endfor
-			if len(targets) > (len(g:EasyMotion_keys)*3)
+			if len(targets) > (len(g:EasyMotion_keys)*4)
 				throw "Too many matches."
 			endif
 
@@ -516,20 +533,16 @@
 			" }}}
 			call s:SwitchWindow(originalWindow)
 		finally
-			" Restore properties {{{
-				call s:VarReset('&scrolloff')
-				call s:VarReset('&modified')
-				call s:VarReset('&modifiable')
-				call s:VarReset('&readonly')
-				call s:VarReset('&spell')
-				call s:VarReset('&virtualedit')
-			" }}}
+                        windo call s:CloseMode()
 			" Remove shading {{{
 				if g:EasyMotion_do_shade && exists('shade_hl_ids')
 					windo call matchdelete(shade_hl_ids[winnr()])
 					call s:SwitchWindow(originalWindow)
 				endif
 			" }}}
+                        if exists('g:loaded_tagbar')
+                          exec 'TagbarTogglePause'
+                        endif
 		endtry
 	endfunction " }}}
 " }}}
